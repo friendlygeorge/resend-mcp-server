@@ -135,7 +135,7 @@ function formatContact(c: any): string {
 // Create server
 const server = new McpServer({
   name: "resend",
-  version: "1.0.0",
+  version: "1.1.0",
 });
 
 // ── Tool: send_email ──
@@ -437,6 +437,235 @@ server.tool(
             type: "text" as const,
             text: `✅ **Contact created**\n\n${formatContact(data)}`,
           },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: send_batch_email ──
+server.tool(
+  "send_batch_email",
+  "Send multiple transactional emails in a single API call (up to 100)",
+  {
+    emails: z
+      .array(
+        z.object({
+          from: z.string().describe("Sender address"),
+          to: z.union([z.string(), z.array(z.string())]).describe("Recipient(s)"),
+          subject: z.string().describe("Subject line"),
+          html: z.string().optional().describe("HTML body"),
+          text: z.string().optional().describe("Plain text body"),
+          cc: z.union([z.string(), z.array(z.string())]).optional(),
+          bcc: z.union([z.string(), z.array(z.string())]).optional(),
+          reply_to: z.union([z.string(), z.array(z.string())]).optional(),
+        })
+      )
+      .min(1)
+      .max(100)
+      .describe("Array of email objects (1-100)"),
+  },
+  async ({ emails }) => {
+    try {
+      const body = emails.map((e) => {
+        const item: any = { from: e.from, to: e.to, subject: e.subject };
+        if (e.html) item.html = e.html;
+        if (e.text) item.text = e.text;
+        if (e.cc) item.cc = e.cc;
+        if (e.bcc) item.bcc = e.bcc;
+        if (e.reply_to) item.reply_to = e.reply_to;
+        return item;
+      });
+      const data = await rateLimitedFetch("/emails/batch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const ids = (data.data || []).map((r: any) => r.id).filter(Boolean);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `✅ **Batch sent** — ${ids.length} email(s)\n\nIDs: ${ids.map((id: string) => `\`${id}\``).join(", ")}`,
+          },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: list_audiences ──
+server.tool(
+  "list_audiences",
+  "List all audiences in your Resend account",
+  {
+    limit: z.number().optional().default(20).describe("Max audiences to return (default 20)"),
+  },
+  async ({ limit }) => {
+    try {
+      const data = await rateLimitedFetch(`/audiences?limit=${Math.min(limit, 100)}`);
+      const audiences = data.data || [];
+      if (audiences.length === 0) {
+        return { content: [{ type: "text" as const, text: "No audiences found." }] };
+      }
+      const lines = audiences.map(
+        (a: any, i: number) =>
+          `**${i + 1}. ${a.name}** — ID: \`${a.id}\` | Created: ${a.created_at || "N/A"}`
+      );
+      return {
+        content: [
+          { type: "text" as const, text: `**📋 Audiences (${audiences.length}):**\n\n${lines.join("\n")}` },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: create_audience ──
+server.tool(
+  "create_audience",
+  "Create a new audience for organizing contacts",
+  {
+    name: z.string().describe("Audience name (e.g. 'Newsletter Subscribers')"),
+  },
+  async ({ name }) => {
+    try {
+      const data = await rateLimitedFetch("/audiences", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `✅ **Audience created**\n\n- **Name:** ${data.name}\n- **ID:** \`${data.id}\``,
+          },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: get_contact ──
+server.tool(
+  "get_contact",
+  "Get details about a specific contact by ID",
+  {
+    audience_id: z.string().describe("Audience ID"),
+    contact_id: z.string().describe("Contact ID"),
+  },
+  async ({ audience_id, contact_id }) => {
+    try {
+      const data = await rateLimitedFetch(`/audiences/${audience_id}/contacts/${contact_id}`);
+      return { content: [{ type: "text" as const, text: formatContact(data) }] };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: update_contact ──
+server.tool(
+  "update_contact",
+  "Update an existing contact's properties",
+  {
+    audience_id: z.string().describe("Audience ID"),
+    contact_id: z.string().describe("Contact ID"),
+    email: z.string().email().optional().describe("New email address"),
+    first_name: z.string().optional().describe("New first name"),
+    last_name: z.string().optional().describe("New last name"),
+    unsubscribed: z.boolean().optional().describe("Unsubscribe status"),
+  },
+  async ({ audience_id, contact_id, email, first_name, last_name, unsubscribed }) => {
+    try {
+      const body: any = {};
+      if (email) body.email = email;
+      if (first_name !== undefined) body.first_name = first_name;
+      if (last_name !== undefined) body.last_name = last_name;
+      if (unsubscribed !== undefined) body.unsubscribed = unsubscribed;
+      if (Object.keys(body).length === 0) {
+        return { content: [{ type: "text" as const, text: "Error: Provide at least one field to update." }] };
+      }
+      await rateLimitedFetch(`/audiences/${audience_id}/contacts/${contact_id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      return {
+        content: [
+          { type: "text" as const, text: `✅ **Contact updated**\n\n- Audience: \`${audience_id}\`\n- Contact: \`${contact_id}\`` },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: delete_contact ──
+server.tool(
+  "delete_contact",
+  "Remove a contact from an audience",
+  {
+    audience_id: z.string().describe("Audience ID"),
+    contact_id: z.string().describe("Contact ID"),
+  },
+  async ({ audience_id, contact_id }) => {
+    try {
+      await rateLimitedFetch(`/audiences/${audience_id}/contacts/${contact_id}`, {
+        method: "DELETE",
+      });
+      return {
+        content: [
+          { type: "text" as const, text: `✅ **Contact deleted**\n\n- Audience: \`${audience_id}\`\n- Contact: \`${contact_id}\`` },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: delete_api_key ──
+server.tool(
+  "delete_api_key",
+  "Delete a Resend API key by ID",
+  {
+    key_id: z.string().describe("API key ID (from list_api_keys)"),
+  },
+  async ({ key_id }) => {
+    try {
+      await rateLimitedFetch(`/api-keys/${key_id}`, { method: "DELETE" });
+      return {
+        content: [
+          { type: "text" as const, text: `✅ **API key deleted** — \`${key_id}\`` },
+        ],
+      };
+    } catch (e: any) {
+      return { content: [{ type: "text" as const, text: `Error: ${e.message}` }] };
+    }
+  }
+);
+
+// ── Tool: delete_domain ──
+server.tool(
+  "delete_domain",
+  "Remove a sending domain from your Resend account",
+  {
+    domain_id: z.string().describe("Domain ID (from list_domains)"),
+  },
+  async ({ domain_id }) => {
+    try {
+      await rateLimitedFetch(`/domains/${domain_id}`, { method: "DELETE" });
+      return {
+        content: [
+          { type: "text" as const, text: `✅ **Domain deleted** — \`${domain_id}\`` },
         ],
       };
     } catch (e: any) {

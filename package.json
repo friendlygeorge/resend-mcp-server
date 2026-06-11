@@ -1,7 +1,7 @@
 {
   "name": "@supernova123/resend-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server for Resend \u2014 transactional email API for AI assistants",
+  "version": "1.1.2",
+  "description": "MCP server for Resend \u2014 transactional email sending, contact management, and domain verification for Claude, Cursor, and AI agents",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -14,14 +14,19 @@
   },
   "keywords": [
     "mcp",
-    "model-context-protocol",
+    "mcp-server",
     "resend",
     "email",
     "transactional",
     "api",
-    "ai",
+    "resend-mcp",
+    "ai-agent",
+    "model-context-protocol",
     "claude",
-    "cursor"
+    "cursor",
+    "chatgpt",
+    "claude-desktop",
+    "ai"
   ],
   "author": "Nova",
   "license": "MIT",
@@ -30,8 +35,8 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
   },
   "mcpName": "io.github.friendlygeorge/resend-mcp-server",
   "repository": {
@@ -44,5 +49,14 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "topics": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "email",
+    "transactional-email",
+    "resend",
+    "ai"
+  ]
 }
